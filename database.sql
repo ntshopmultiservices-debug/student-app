@@ -1,12 +1,22 @@
-CREATE DATABASE IF NOT EXISTS student_db;
-USE student_db;
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'student_db')
+BEGIN
+    CREATE DATABASE [student_db];
+END
+GO
 
-CREATE TABLE IF NOT EXISTS students (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    phone VARCHAR(50),
-    dob DATE,
-    department VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+USE [student_db];
+GO
+
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='students' and xtype='U')
+BEGIN
+    CREATE TABLE students (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        full_name NVARCHAR(255) NOT NULL,
+        email NVARCHAR(255) NOT NULL UNIQUE,
+        phone NVARCHAR(50),
+        dob DATE,
+        department NVARCHAR(100),
+        created_at DATETIME DEFAULT GETDATE()
+    );
+END
+GO

@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
+const sql = require('mssql/msnodesqlv8');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -12,31 +12,22 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '')));
 
 // Database connection
-const pool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'student_db',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+const connectionString = 'Driver={ODBC Driver 17 for SQL Server};Server=(localdb)\\MSSQLLocalDB;Database=student_db;Trusted_Connection=yes;';
 
-// Check DB connection
-pool.getConnection()
-    .then(connection => {
-        console.log('Connected to MySQL database successfully');
-        connection.release();
-    })
-    .catch(err => {
-        console.error('Error connecting to MySQL database. Ensure XAMPP/MySQL is running.');
-    });
+const poolPromise = new sql.ConnectionPool({ connectionString: connectionString })
+  .connect()
+  .then(pool => {
+    console.log('Connected to MSSQL LocalDB successfully');
+    return pool;
+  })
+  .catch(err => console.error('Database Connection Failed! Bad Config: ', err));
 
 // Get all students
 app.get('/api/students', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM students ORDER BY created_at DESC');
-        res.json(rows);
+        const pool = await poolPromise;
+        const result = await pool.request().query('SELECT * FROM students ORDER BY created_at DESC');
+        res.json(result.recordset);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Database error' });
@@ -47,11 +38,19 @@ app.get('/api/students', async (req, res) => {
 app.post('/api/students', async (req, res) => {
     const { full_name, email, phone, dob, department } = req.body;
     try {
-        const [result] = await pool.query(
-            'INSERT INTO students (full_name, email, phone, dob, department) VALUES (?, ?, ?, ?, ?)',
-            [full_name, email, phone, dob, department]
-        );
-        res.status(201).json({ message: 'Student registered successfully', id: result.insertId });
+        const pool = await poolPromise;
+        const result = await pool.request()
+            .input('full_name', sql.NVarChar, full_name)
+            .input('email', sql.NVarChar, email)
+            .input('phone', sql.NVarChar, phone)
+            .input('dob', sql.Date, dob || null)
+            .input('department', sql.NVarChar, department)
+            .query(`
+                INSERT INTO students (full_name, email, phone, dob, department) 
+                OUTPUT INSERTED.id
+                VALUES (@full_name, @email, @phone, @dob, @department)
+            `);
+        res.status(201).json({ message: 'Student registered successfully', id: result.recordset[0].id });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: error.message || 'Database error' });
@@ -61,7 +60,10 @@ app.post('/api/students', async (req, res) => {
 // Delete a student
 app.delete('/api/students/:id', async (req, res) => {
     try {
-        await pool.query('DELETE FROM students WHERE id = ?', [req.params.id]);
+        const pool = await poolPromise;
+        await pool.request()
+            .input('id', sql.Int, req.params.id)
+            .query('DELETE FROM students WHERE id = @id');
         res.json({ message: 'Student deleted successfully' });
     } catch (error) {
         console.error(error);
